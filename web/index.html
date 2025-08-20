@@ -525,6 +525,8 @@
 	</script>
 		<!-- External libraries -->
 		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+		<!-- App glue should load before enhancement modules to expose hooks -->
+		<script src="app.js"></script>
 		<!-- Enhancement modules (non-breaking) -->
 		<script src="js/ThemeManager.js"></script>
 		<script src="js/AudioEngine.js"></script>

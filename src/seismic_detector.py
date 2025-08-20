@@ -19,6 +19,13 @@ from scipy import signal
 from scipy.fft import fft, fftfreq
 from scipy.signal import butter, filtfilt, spectrogram
 
+# Lightweight compression integration for metrics
+try:
+	from .data_compression import compress_window
+except Exception:
+	def compress_window(arr: np.ndarray) -> bytes:  # type: ignore
+		return np.asarray(arr).tobytes()
+
 # Optional plotting
 import matplotlib.pyplot as plt
 
@@ -93,7 +100,9 @@ class PlanetarySeismicDetector:
 			'transmitted_data_points': 0,
 			'events_detected': 0,
 			'false_positives': 0,
-			'compression_ratio': 0
+			'compression_ratio': 0,
+			'raw_bytes': 0,
+			'compressed_bytes': 0
 		}
 
 	def _get_planet_params(self, planet: str) -> Dict:
@@ -163,7 +172,18 @@ class PlanetarySeismicDetector:
 			for event in events:
 				if event.raw_data_indices:
 					start, end = event.raw_data_indices
-					self.metrics['transmitted_data_points'] += (end - start)
+					length = end - start
+					self.metrics['transmitted_data_points'] += length
+					# Track compression metrics using codec
+					segment = filtered_data[start:end]
+					raw_bytes = int(segment.size * segment.dtype.itemsize)
+					try:
+						comp = compress_window(segment.astype(np.float32))
+						comp_bytes = len(comp)
+					except Exception:
+						comp_bytes = raw_bytes
+					self.metrics['raw_bytes'] += raw_bytes
+					self.metrics['compressed_bytes'] += comp_bytes
 
 			self.metrics['events_detected'] += len(events)
 			self.update_compression_ratio()
@@ -228,13 +248,21 @@ class PlanetarySeismicDetector:
 		Multi-algorithm event detection.
 		Returns list of (start_index, end_index) tuples.
 		"""
+		# If input is long, process in overlapping windows to bound CPU/memory
+		win_seconds = max(10.0, float(self.params.get('lta_window', 30.0)))
+		window = int(self.sampling_rate * win_seconds)
+		step = max(window // 2, 1)
+
+		if len(data) > window * 2:
+			return self._detect_events_windowed(data, window, step)
+
 		detections = []
 
 		# 1. STA/LTA Detection
 		sta_lta_triggers = self.sta_lta_detector.detect(data, self.params)
 		detections.extend(sta_lta_triggers)
 
-		# 2. Wavelet-based Detection
+		# 2. STFT-based spectral energy Detection (replaces heavy CWT)
 		wavelet_triggers = self.wavelet_detector.detect(data)
 		detections.extend(wavelet_triggers)
 
@@ -252,6 +280,26 @@ class PlanetarySeismicDetector:
 		merged_detections = self.merge_detections(detections)
 
 		return merged_detections
+
+	def _detect_events_windowed(self, data: np.ndarray, window: int, step: int) -> List[Tuple[int, int]]:
+		"""Run detectors on overlapping windows and merge with offset indices."""
+		all_dets: List[Tuple[int, int]] = []
+		for start in range(0, max(1, len(data) - window + 1), step):
+			end = min(len(data), start + window)
+			slice_data = data[start:end]
+			# Local detections
+			local = []
+			local.extend(self.sta_lta_detector.detect(slice_data, self.params))
+			local.extend(self.wavelet_detector.detect(slice_data))
+			if self.template_matcher.has_templates():
+				local.extend(self.template_matcher.detect(slice_data))
+			if self.anomaly_detector:
+				local.extend(self.detect_with_ml(slice_data, {}))
+			# Offset to global indices and append
+			for s, e in local:
+				all_dets.append((s + start, e + start))
+		# Merge overlaps from all windows
+		return self.merge_detections(all_dets)
 
 	def classify_events(self, data: np.ndarray, detections: List[Tuple[int, int]], 
 						features: Dict, timestamp: datetime) -> List[SeismicEvent]:
@@ -308,22 +356,29 @@ class PlanetarySeismicDetector:
 		X = training_data[feature_cols].values
 		y = training_data['event_type'].values
 
-		# Split data
+		# Split data with stratification
 		X_train, X_test, y_train, y_test = train_test_split(
-			X, y, test_size=0.2, random_state=42
+			X, y, test_size=0.2, random_state=42, stratify=y
 		)
 
 		# Scale features
 		X_train_scaled = self.scaler.fit_transform(X_train)
 		X_test_scaled = self.scaler.transform(X_test)
 
-		# Train Random Forest classifier
-		self.ml_classifier = RandomForestClassifier(
-			n_estimators=100,
-			max_depth=10,
-			random_state=42
+		# Train Random Forest with calibration and CV if available
+		rf = RandomForestClassifier(
+			n_estimators=200,
+			max_depth=None,
+			random_state=42,
+			n_jobs=-1
 		)
-		self.ml_classifier.fit(X_train_scaled, y_train)
+		try:
+			from sklearn.calibration import CalibratedClassifierCV
+			self.ml_classifier = CalibratedClassifierCV(rf, cv=3, method='sigmoid')
+			self.ml_classifier.fit(X_train_scaled, y_train)
+		except Exception:
+			self.ml_classifier = rf
+			self.ml_classifier.fit(X_train_scaled, y_train)
 
 		# Train Isolation Forest for anomaly detection
 		self.anomaly_detector = IsolationForest(
@@ -332,22 +387,47 @@ class PlanetarySeismicDetector:
 		)
 		self.anomaly_detector.fit(X_train_scaled)
 
-		# Train CNN if TensorFlow available
+		# Train CNN if TensorFlow available (encode labels to integers)
 		if DEEP_LEARNING_AVAILABLE:
-			self.cnn_model = self.build_cnn_model(X_train.shape[1])
-			self.cnn_model.fit(
-				X_train_scaled, y_train,
-				epochs=50,
-				batch_size=32,
-				validation_split=0.2,
-				verbose=0
-			)
+			try:
+				from sklearn.preprocessing import LabelEncoder
+				le = LabelEncoder()
+				y_train_enc = le.fit_transform(y_train)
+				# Keep encoder for potential downstream usage
+				self._label_encoder = le
+				self.cnn_model = self.build_cnn_model(X_train.shape[1])
+				self.cnn_model.fit(
+					X_train_scaled, y_train_enc,
+					epochs=20,
+					batch_size=32,
+					validation_split=0.2,
+					verbose=0
+				)
+			except Exception as _cnn_exc:
+				print("CNN training skipped:", _cnn_exc)
+				self.cnn_model = None
 
-		# Evaluate models
+		# Evaluate with confusion matrix and CV
+		from sklearn.metrics import confusion_matrix
+		from sklearn.model_selection import StratifiedKFold, cross_val_score
 		y_pred = self.ml_classifier.predict(X_test_scaled)
+		report = classification_report(y_test, y_pred, output_dict=True)
+		cm = confusion_matrix(y_test, y_pred).tolist()
+		cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+		cv_scores = cross_val_score(self.ml_classifier, X_train_scaled, y_train, cv=cv, scoring='accuracy')
+		self._last_training_metadata = {
+			'timestamp': datetime.now().isoformat(),
+			'planet': self.planet,
+			'sampling_rate': self.sampling_rate,
+			'feature_cols': feature_cols,
+			'cv_mean_accuracy': float(np.mean(cv_scores)),
+			'cv_std_accuracy': float(np.std(cv_scores)),
+			'confusion_matrix': cm,
+			'classification_report': report,
+		}
 		print("Classification Report:")
-		print(classification_report(y_test, y_pred))
-
+		from pprint import pprint as _pprint
+		_pprint(report)
 		return self.ml_classifier
 
 	def build_cnn_model(self, input_shape: int):
@@ -526,7 +606,12 @@ class PlanetarySeismicDetector:
 		return merged
 
 	def update_compression_ratio(self):
-		"""Calculate data compression ratio"""
+		"""Calculate data compression ratio using bytes if available."""
+		if self.metrics.get('compressed_bytes', 0) > 0:
+			ratio = self.metrics['raw_bytes'] / max(1, self.metrics['compressed_bytes'])
+			self.metrics['compression_ratio'] = float(ratio)
+			return
+		# Fallback if no byte metrics yet
 		if self.metrics['transmitted_data_points'] > 0:
 			ratio = self.metrics['total_data_points'] / self.metrics['transmitted_data_points']
 			self.metrics['compression_ratio'] = ratio
@@ -577,6 +662,7 @@ class PlanetarySeismicDetector:
 			'sampling_rate': self.sampling_rate,
 			'events': events_data,
 			'metrics': self.metrics,
+			'model_metadata': getattr(self, '_last_training_metadata', None),
 			'compression_ratio': f"{self.metrics['compression_ratio']:.1f}:1"
 		}
 
@@ -592,7 +678,13 @@ class PlanetarySeismicDetector:
 			'scaler': self.scaler,
 			'ml_classifier': self.ml_classifier,
 			'anomaly_detector': self.anomaly_detector,
-			'planet_params': self.params
+			'planet_params': self.params,
+			'metadata': getattr(self, '_last_training_metadata', {
+				'timestamp': datetime.now().isoformat(),
+				'planet': self.planet,
+				'sampling_rate': self.sampling_rate,
+				'feature_cols': ['mean','std','max','rms','peak_frequency','spectral_centroid','energy','snr']
+			})
 		}
 
 		joblib.dump(model_data, filename)
@@ -605,6 +697,7 @@ class PlanetarySeismicDetector:
 		self.scaler = model_data['scaler']
 		self.ml_classifier = model_data['ml_classifier']
 		self.anomaly_detector = model_data['anomaly_detector']
+		self._last_training_metadata = model_data.get('metadata', None)
 
 		print(f"Model loaded from {filename}")
 
@@ -614,6 +707,7 @@ class STALTADetector:
 
 	def __init__(self, sampling_rate: float):
 		self.sampling_rate = sampling_rate
+		self.enable_adaptive = True
 
 	def detect(self, data: np.ndarray, params: Dict) -> List[Tuple[int, int]]:
 		"""Detect events using STA/LTA algorithm"""
@@ -630,16 +724,26 @@ class STALTADetector:
 
 		ratio = sta / lta
 
+		# Adaptive threshold using robust stats on ratio
+		if self.enable_adaptive:
+			med = float(np.median(ratio))
+			mad = float(np.median(np.abs(ratio - med)) + 1e-9)
+			thr_up = max(trigger_ratio, med + 3.5 * mad)
+			thr_down = max(trigger_ratio * 0.5, med + 1.75 * mad)
+		else:
+			thr_up = trigger_ratio
+			thr_down = trigger_ratio * 0.5
+
 		# Find triggers
 		triggers = []
 		in_event = False
 		start_idx = 0
 
 		for i in range(len(ratio)):
-			if not in_event and ratio[i] > trigger_ratio:
+			if not in_event and ratio[i] > thr_up:
 				in_event = True
 				start_idx = i
-			elif in_event and ratio[i] < trigger_ratio * 0.5:
+			elif in_event and ratio[i] < thr_down:
 				in_event = False
 				triggers.append((start_idx, i))
 
@@ -652,40 +756,43 @@ class STALTADetector:
 
 
 class WaveletDetector:
-	"""Wavelet transform-based event detector"""
+	"""STFT-based energy burst detector (replaces heavy CWT for realtime)."""
 
 	def __init__(self, sampling_rate: float):
 		self.sampling_rate = sampling_rate
 
 	def detect(self, data: np.ndarray) -> List[Tuple[int, int]]:
-		"""Detect events using wavelet transform"""
-		from scipy import signal as scipy_signal
-
-		# Use Morlet wavelet
-		widths = np.arange(1, min(128, len(data)//4))
-		cwt_matrix = scipy_signal.cwt(data, scipy_signal.morlet2, widths)
-
-		# Calculate energy across scales
-		energy = np.sum(np.abs(cwt_matrix)**2, axis=0)
-
-		# Normalize energy
-		energy = energy / np.max(energy)
-
-		# Detect peaks in energy
-		threshold = 0.3
-		triggers = []
+		if len(data) < 64:
+			return []
+		nper = min(256, max(64, len(data)//8))
+		over = int(nper * 0.5)
+		f, t, Sxx = spectrogram(data, fs=self.sampling_rate, nperseg=nper, noverlap=over, scaling='spectrum', mode='psd')
+		# Focus on <=10 Hz by default
+		band = f <= 10.0
+		if not np.any(band):
+			band = slice(None)
+		energy_t = np.sum(Sxx[band, :], axis=0)
+		if np.max(energy_t) > 0:
+			energy = energy_t / np.max(energy_t)
+		else:
+			energy = energy_t
+		med = float(np.median(energy))
+		mad = float(np.median(np.abs(energy - med)) + 1e-9)
+		thr_up = max(0.2, med + 3.0 * mad)
+		thr_down = max(0.1, med + 1.5 * mad)
+		frame_len = nper - over
+		triggers: List[Tuple[int, int]] = []
 		in_event = False
-		start_idx = 0
-
+		start_idx_samp = 0
 		for i in range(len(energy)):
-			if not in_event and energy[i] > threshold:
+			if not in_event and energy[i] > thr_up:
 				in_event = True
-				start_idx = i
-			elif in_event and energy[i] < threshold * 0.5:
+				start_idx_samp = i * frame_len
+			elif in_event and energy[i] < thr_down:
 				in_event = False
-				if i - start_idx > 10:  # Minimum event length
-					triggers.append((start_idx, i))
-
+				end_idx_samp = (i + 1) * frame_len
+				if end_idx_samp - start_idx_samp > max(10, frame_len // 2):
+					triggers.append((max(0, start_idx_samp), min(len(data), end_idx_samp)))
 		return triggers
 
 

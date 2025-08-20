@@ -156,6 +156,20 @@ python train_model.py --data data/training/ --output models/custom.pkl
 python batch_process.py --input-dir data/apollo/ --output results/
 ```
 
+WebSocket server flags:
+
+- Auto-training is enabled by default if a model is missing.
+- `--no-fallback-train` disables auto-training.
+- `--train-only` trains/saves a compact model and exits (no server).
+- `--planet {moon|mars|earth}` and `--sr <Hz>` to configure detector.
+
+Examples (PowerShell):
+
+```powershell
+python backend/run_ws.py  # starts server; auto-trains if no model exists
+python backend/run_ws.py --no-fallback-train  # start server; do not train if missing
+python backend/run_ws.py --train-only  # just produce a compact model and exit
+```
 ### Python API
 
 ```python
