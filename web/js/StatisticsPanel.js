@@ -113,6 +113,27 @@ class StatisticsPanel {
         const m4 = data.reduce((s,x)=> s + Math.pow((x - this.stats.raw.mean)/this.stats.raw.std,4),0) / n; this.stats.raw.kurtosis = m4 - 3;
         const m3 = data.reduce((s,x)=> s + Math.pow((x - this.stats.raw.mean)/this.stats.raw.std,3),0) / n; this.stats.raw.skewness = m3;
         this.stats.processed.zeroCrossings = 0; for (let i=1;i<data.length;i++){ if ((data[i]>=0 && data[i-1]<0) || (data[i]<0 && data[i-1]>=0)) this.stats.processed.zeroCrossings++; }
+        // P1: Lightweight spectral metrics (naive DFT on downsample)
+        try {
+            const sampleRate = 100; // UI heuristic to match backend default
+            const maxBins = 128; // compute on a small subset for speed
+            const step = Math.max(1, Math.floor(data.length / maxBins));
+            const xs = []; for (let i=0;i<maxBins && i*step < data.length; i++) xs.push(data[i*step]);
+            const N = xs.length; if (N > 8) {
+                const mags = new Array(N).fill(0);
+                for (let k=0;k<N;k++){
+                    let re=0, im=0; for (let n=0;n<N;n++){ const angle = -2*Math.PI*k*n/N; const v = xs[n]; re += v*Math.cos(angle); im += v*Math.sin(angle); }
+                    mags[k] = Math.sqrt(re*re + im*im);
+                }
+                const freqs = mags.map((_,k)=> k * (sampleRate / (N*step)));
+                let peakIdx = 0; for (let i=1;i<mags.length;i++){ if (mags[i] > mags[peakIdx]) peakIdx = i; }
+                const sumMag = mags.reduce((a,b)=>a+b,0) || 1;
+                const centroid = mags.reduce((s,m,i)=> s + m*freqs[i], 0) / sumMag;
+                this.stats.processed.peakFrequency = freqs[peakIdx] || 0;
+                this.stats.processed.spectralCentroid = centroid || 0;
+                this.stats.processed.energy = mags.reduce((s,m)=> s + m*m, 0);
+            }
+        } catch {}
         this.updateUI(); this.updateCharts(data);
     }
     updateUI() {
@@ -150,7 +171,42 @@ class StatisticsPanel {
         this.charts.histogram.data.datasets[0].data = histogram; this.charts.histogram.update();
     }
     startMonitoring() { this.updateInterval = setInterval(() => { if (performance.memory) this.stats.performance.memoryUsage = performance.memory.usedJSHeapSize; }, 1000); }
-    updateFromServer(stats) { this.stats = { ...this.stats, ...stats }; this.updateUI(); }
+    updateFromServer(stats) {
+        // Map backend stats payload to panel structure safely
+        try {
+            if (!stats || typeof stats !== 'object') return;
+            // Events
+            if (typeof stats.events_detected === 'number') {
+                this.stats.events.total = stats.events_detected;
+            }
+            // Data points
+            if (typeof stats.total_data_points === 'number') {
+                this.stats.performance.dataPoints = stats.total_data_points;
+            }
+            // Compression (bytes-aware preferred)
+            const rawB = Number(stats.raw_bytes) || 0;
+            const compB = Number(stats.compressed_bytes) || 0;
+            let ratio = Number(stats.compression_ratio) || 0;
+            if (rawB > 0 && compB > 0) {
+                ratio = rawB / compB;
+            }
+            if (ratio && isFinite(ratio)) {
+                this.stats.performance.compressionRatio = ratio;
+            }
+            // Update UI elements also used outside the panel
+            const crEl = document.getElementById('compressionRatio');
+            if (crEl && ratio && isFinite(ratio)) crEl.textContent = `${ratio.toFixed(1)}:1`;
+            const dsEl = document.getElementById('dataSaved');
+            if (dsEl && rawB > 0 && compB >= 0) {
+                const savedPct = Math.max(0, Math.min(100, 100 * (1 - (compB / rawB))));
+                dsEl.textContent = savedPct.toFixed(1);
+            }
+        } catch (e) {
+            // Keep UI resilient on malformed payloads
+            // console.error('Stats mapping error', e);
+        }
+        this.updateUI();
+    }
 }
 
 document.addEventListener('DOMContentLoaded', () => { window.statisticsPanel = new StatisticsPanel(); });

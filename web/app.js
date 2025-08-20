@@ -130,6 +130,18 @@
 				list.forEach(ev => window.addEventToList(ev));
 			});
 		}
+
+		// Route Export Results button to ExportManager modal if available
+		window.exportResults = function(){
+			if (window.exportManager && typeof window.exportManager.openModal === 'function'){
+				window.exportManager.openModal();
+			} else {
+				// Fallback to basic JSON download
+				const payload = { planet: window.currentPlanet || 'moon', timestamp: new Date().toISOString(), events: window.detectedEvents || [] };
+				const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+				const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `seismoguard_events_${Date.now()}.json`; a.click(); URL.revokeObjectURL(a.href);
+			}
+		};
 	});
 })();
 

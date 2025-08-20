@@ -76,15 +76,16 @@ class ExportManager {
         }
     }
     async doExport() {
-        const format = document.getElementById('exportFormat').value;
+    const format = document.getElementById('exportFormat').value;
         const compress = document.getElementById('compressExport').checked;
         const includeVisuals = document.getElementById('includeVisuals').checked;
         const selectedData = {}; document.querySelectorAll('input[name="exportData"]:checked').forEach(i=> selectedData[i.value]=true);
         const exportData = await this.prepareExportData(selectedData, includeVisuals);
-        let content = this.formatData(exportData, format);
-        if (compress) content = await this.compressData(content);
-        this.downloadFile(content, `seismic_export_${Date.now()}.${this.getExtension(format, compress)}`);
-        this.exportHistory.push({ timestamp: new Date(), format, compressed: compress, size: content.length });
+    let { content, mime } = this.formatData(exportData, format);
+    if (compress) ({ content, mime } = await this.compressData(content, mime));
+    this.downloadFile(content, `seismic_export_${Date.now()}.${this.getExtension(format, compress)}`, mime);
+    const size = (content instanceof Blob) ? content.size : (typeof content === 'string' ? content.length : 0);
+    this.exportHistory.push({ timestamp: new Date(), format, compressed: compress, size });
         this.closeModal(); if (window.audioEngine) window.audioEngine.play('success');
     }
     async prepareExportData(selections, includeVisuals){
@@ -97,15 +98,73 @@ class ExportManager {
         if (includeVisuals) data.visualizations = await this.captureVisualizations();
         return data;
     }
-    formatData(data, format){ switch(format){ case 'JSON': return JSON.stringify(data,null,2); case 'CSV': return this.toCSV(data); case 'XML': return this.toXML(data); case 'MATLAB': return this.toMATLAB(data); case 'Excel': return this.toExcel(data); case 'HDF5': return this.toHDF5(data); default: return JSON.stringify(data); } }
+    formatData(data, format){
+        switch(format){
+            case 'JSON': return { content: JSON.stringify(data,null,2), mime: 'application/json' };
+            case 'CSV': return { content: this.toCSV(data), mime: 'text/csv' };
+            case 'XML': return { content: this.toXML(data), mime: 'application/xml' };
+            case 'MATLAB': return { content: this.toMATLAB(data), mime: 'text/plain' };
+            case 'Excel': return this.toExcel(data);
+            case 'HDF5': return this.toHDF5(data);
+            default: return { content: JSON.stringify(data), mime: 'application/json' };
+        }
+    }
     toCSV(data){ let csv=''; if (data.events && data.events.length){ const headers = Object.keys(data.events[0]); csv += headers.join(',') + '\n'; data.events.forEach(e=> { csv += headers.map(h=> e[h]).join(',') + '\n'; }); } return csv; }
     toXML(data){ const toXMLString = (obj, root='root') => { let xml = `<${root}>`; for (const [k,v] of Object.entries(obj)){ if (typeof v === 'object' && v !== null){ if (Array.isArray(v)) v.forEach(it=> xml += toXMLString(it,k)); else xml += toXMLString(v,k); } else { xml += `<${k}>${v}</${k}>`; } } xml += `</${root}>`; return xml; }; return '<?xml version="1.0" encoding="UTF-8"?>\n' + toXMLString(data,'seismic_data'); }
     toMATLAB(data){ return `% SeismoGuard Export\n% ${new Date().toISOString()}\n% This is a placeholder.`; }
-    toExcel(){ return 'Excel binary - not implemented in browser'; }
-    toHDF5(){ return 'HDF5 binary - not implemented in browser'; }
-    async compressData(data){ return btoa(data); }
+    toExcel(data){
+        try {
+            if (!window.XLSX) throw new Error('XLSX not available');
+            const wb = XLSX.utils.book_new();
+            if (data.events) {
+                const ws = XLSX.utils.json_to_sheet(data.events);
+                XLSX.utils.book_append_sheet(wb, ws, 'Events');
+            }
+            if (data.statistics) {
+                const flat = this.flattenObject(data.statistics);
+                const ws = XLSX.utils.json_to_sheet([flat]);
+                XLSX.utils.book_append_sheet(wb, ws, 'Statistics');
+            }
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            return { content: new Blob([wbout], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), mime: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' };
+        } catch (e) {
+            return { content: 'Excel export not available in this environment', mime: 'text/plain' };
+        }
+    }
+    toHDF5(){
+        // Not feasible purely in-browser without heavy libs; provide placeholder
+        return { content: 'HDF5 export is not supported in the browser build.', mime: 'text/plain' };
+    }
+    async compressData(content, mime){
+        try {
+            if (typeof content === 'string'){
+                const enc = new TextEncoder().encode(content);
+                const gz = window.pako ? window.pako.gzip(enc) : enc; // fallback: no compression
+                return { content: new Blob([gz], { type: mime }), mime };
+            }
+            if (content instanceof Blob){
+                const buf = await content.arrayBuffer();
+                const gz = window.pako ? window.pako.gzip(new Uint8Array(buf)) : new Uint8Array(buf);
+                return { content: new Blob([gz], { type: content.type || mime }), mime: content.type || mime };
+            }
+            return { content, mime };
+        } catch (e) { return { content, mime }; }
+    }
     async captureVisualizations(){ const canvases = ['waveformCanvas','spectrogramCanvas','performanceChart'].map(id=> document.getElementById(id)); return canvases.filter(Boolean).map(c=> c.toDataURL()); }
-    downloadFile(content, filename){ const blob = new Blob([content], { type: 'application/octet-stream' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); }
+    downloadFile(content, filename, mime){
+        const blob = content instanceof Blob ? content : new Blob([content], { type: mime || 'application/octet-stream' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url);
+    }
+    flattenObject(obj, prefix=''){
+        const out = {};
+        for (const [k,v] of Object.entries(obj||{})){
+            const key = prefix ? `${prefix}.${k}` : k;
+            if (v && typeof v === 'object' && !Array.isArray(v)) Object.assign(out, this.flattenObject(v, key));
+            else out[key] = v;
+        }
+        return out;
+    }
     getExtension(format, compressed){ const map = { JSON:'json', CSV:'csv', XML:'xml', MATLAB:'m', Excel:'xlsx', HDF5:'h5' }; let ext = map[format] || 'dat'; if (compressed) ext += '.gz'; return ext; }
 }
 
