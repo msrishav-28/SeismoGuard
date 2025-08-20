@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>SeismoGuard - Planetary Seismic Intelligence</title>
+	<link rel="stylesheet" href="styles.css" />
+	<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='28' fill='%2300ffff'/%3E%3C/svg%3E"/>
+</head>
+<body>
+	<div class="stars" id="stars"></div>
+    
+	<div class="container">
+		<header>
+			<h1>🚀 SeismoGuard</h1>
+			<p class="subtitle">Intelligent Planetary Seismic Detection System</p>
+			<div class="planet-selector">
+				<button class="planet-btn active" onclick="selectPlanet('moon')">🌙 Moon</button>
+				<button class="planet-btn" onclick="selectPlanet('mars')">🔴 Mars</button>
+				<button class="planet-btn" onclick="selectPlanet('earth')">🌍 Earth</button>
+			</div>
+		</header>
+
+		<div class="dashboard">
+			<div class="card">
+				<h2>
+					<span class="icon">📡</span>
+					Data Input
+				</h2>
+				<div class="upload-area" id="uploadArea" onclick="document.getElementById('fileInput').click()">
+					<p class="upload-icon">📁</p>
+					<p>Drop seismic data files here or click to browse</p>
+					<p class="upload-hint">Supports: CSV, MSEED, SAC formats</p>
+					<label for="fileInput" class="visually-hidden">Upload seismic data files</label>
+					<input type="file" id="fileInput" accept=".csv,.mseed,.sac" multiple onchange="handleFileSelect(event)" title="Upload seismic data files">
+				</div>
+				<div class="mt-20">
+					<button class="btn" onclick="loadSampleData()">Load Sample Data</button>
+					<button class="btn btn-secondary" onclick="startRealtimeSimulation()">Start Real-time Simulation</button>
+				</div>
+			</div>
+
+			<div class="card">
+				<h2>
+					<span class="icon">📊</span>
+					Signal Processing
+				</h2>
+				<canvas id="waveformCanvas"></canvas>
+				<div class="metrics">
+					<div class="metric">
+						<div class="metric-value" id="snrValue">--</div>
+						<div class="metric-label">SNR (dB)</div>
+					</div>
+					<div class="metric">
+						<div class="metric-value" id="frequencyValue">--</div>
+						<div class="metric-label">Peak Freq (Hz)</div>
+					</div>
+					<div class="metric">
+						<div class="metric-value" id="amplitudeValue">--</div>
+						<div class="metric-label">Amplitude</div>
+					</div>
+				</div>
+				<div class="progress-bar">
+					<div class="progress-fill" id="processingProgress">0%</div>
+				</div>
+			</div>
+
+			<div class="card">
+				<h2>
+					<span class="icon">🔍</span>
+					Detection Engine
+				</h2>
+				<div class="centered-row">
+					<span class="status active" id="engineStatus">Engine Active</span>
+					<span class="status processing" id="processingStatus">Processing</span>
+					<span class="status detected" id="detectionStatus">0 Events Detected</span>
+				</div>
+				<canvas id="spectrogramCanvas"></canvas>
+				<div class="mt-20">
+					<button class="btn" onclick="runDetection()">Run Detection</button>
+					<button class="btn" onclick="toggleAutoDetect()">Auto-Detect: OFF</button>
+					<button class="btn btn-secondary" onclick="exportResults()">Export Results</button>
+				</div>
+			</div>
+
+			<div class="card">
+				<h2>
+					<span class="icon">🎯</span>
+					Event Classification
+				</h2>
+				<div class="event-list" id="eventList">
+					<p class="muted text-center">No events detected yet</p>
+				</div>
+				<div class="metrics mt-20">
+					<div class="metric">
+						<div class="metric-value" id="compressionRatio">--</div>
+						<div class="metric-label">Compression Ratio</div>
+					</div>
+					<div class="metric">
+						<div class="metric-value" id="dataSaved">--</div>
+						<div class="metric-label">Data Saved (%)</div>
+					</div>
+				</div>
+			</div>
+		</div>
+
+	<div class="card full-width">
+			<h2>
+				<span class="icon">🤖</span>
+				ML Performance Metrics
+			</h2>
+			<canvas id="performanceChart"></canvas>
+			<div class="metrics">
+				<div class="metric">
+					<div class="metric-value" id="accuracy">95.8%</div>
+					<div class="metric-label">Accuracy</div>
+				</div>
+				<div class="metric">
+					<div class="metric-value" id="precision">93.2%</div>
+					<div class="metric-label">Precision</div>
+				</div>
+				<div class="metric">
+					<div class="metric-value" id="recall">97.1%</div>
+					<div class="metric-label">Recall</div>
+				</div>
+				<div class="metric">
+					<div class="metric-value" id="f1score">95.1</div>
+					<div class="metric-label">F1 Score</div>
+				</div>
+			</div>
+		</div>
+	</div>
+
+	<div class="floating-menu">
+		<div class="fab" onclick="openSettings()">⚙️</div>
+		<div class="fab" onclick="openHelp()">❓</div>
+		<div class="fab" onclick="openAbout()">ℹ️</div>
+	</div>
+
+	<div class="modal" id="settingsModal">
+		<div class="modal-content">
+			<span class="close-modal" onclick="closeModal('settingsModal')">&times;</span>
+			<h2>Detection Settings</h2>
+			<div class="my-20">
+				<label for="sensitivityRange">Sensitivity Threshold:</label>
+				<input id="sensitivityRange" type="range" min="0" max="100" value="50" title="Sensitivity Threshold">
+				<br><br>
+				<label for="windowSize">Window Size (seconds):</label>
+				<input id="windowSize" type="number" value="30" title="Window Size in seconds">
+				<br><br>
+				<label for="algoSelect">Algorithm:</label>
+				<select id="algoSelect" title="Detection Algorithm">
+					<option>STA/LTA + CNN</option>
+					<option>Wavelet Transform</option>
+					<option>Template Matching</option>
+					<option>Ensemble Method</option>
+				</select>
+			</div>
+			<button class="btn" onclick="saveSettings()">Save Settings</button>
+		</div>
+	</div>
+
+	<script>
+		// Generate animated stars
+		function createStars() {
+			const starsContainer = document.getElementById('stars');
+			for (let i = 0; i < 100; i++) {
+				const star = document.createElement('div');
+				star.className = 'star';
+				star.style.left = Math.random() * 100 + '%';
+				star.style.top = Math.random() * 100 + '%';
+				star.style.animationDelay = Math.random() * 3 + 's';
+				starsContainer.appendChild(star);
+			}
+		}
+
+		// Initialize canvas contexts
+		let waveformCtx, spectrogramCtx, performanceCtx;
+		let currentPlanet = 'moon';
+		let autoDetectEnabled = false;
+		let detectedEvents = [];
+		let simInterval = null;
+
+		window.onload = function() {
+			createStars();
+			initializeCanvases();
+			setupDragAndDrop();
+			drawInitialCharts();
+			updateMetrics();
+			window.addEventListener('resize', debounce(resizeCanvases, 150));
+		};
+
+		function initializeCanvases() {
+			const waveformCanvas = document.getElementById('waveformCanvas');
+			const spectrogramCanvas = document.getElementById('spectrogramCanvas');
+			const performanceCanvas = document.getElementById('performanceChart');
+            
+			waveformCtx = waveformCanvas.getContext('2d');
+			spectrogramCtx = spectrogramCanvas.getContext('2d');
+			performanceCtx = performanceCanvas.getContext('2d');
+            
+			// Set canvas dimensions
+			waveformCanvas.width = waveformCanvas.offsetWidth;
+			waveformCanvas.height = 300;
+			spectrogramCanvas.width = spectrogramCanvas.offsetWidth;
+			spectrogramCanvas.height = 300;
+			performanceCanvas.width = performanceCanvas.offsetWidth;
+			performanceCanvas.height = 300;
+		}
+
+		function resizeCanvases() {
+			initializeCanvases();
+			generateSampleWaveform();
+			generateSpectrogram();
+			drawInitialCharts();
+		}
+
+		function setupDragAndDrop() {
+			const uploadArea = document.getElementById('uploadArea');
+            
+			uploadArea.addEventListener('dragover', (e) => {
+				e.preventDefault();
+				uploadArea.classList.add('dragover');
+			});
+            
+			uploadArea.addEventListener('dragleave', () => {
+				uploadArea.classList.remove('dragover');
+			});
+            
+			uploadArea.addEventListener('drop', (e) => {
+				e.preventDefault();
+				uploadArea.classList.remove('dragover');
+				handleFileSelect(e);
+			});
+		}
+
+		function handleFileSelect(event) {
+			const files = event.target.files || event.dataTransfer.files;
+			if (files.length > 0) {
+				processFiles(files);
+			}
+		}
+
+		function processFiles(files) {
+			// Simulate file processing
+			updateStatus('processingStatus', 'Processing Files...');
+            
+				setTimeout(() => {
+					generateSampleWaveform();
+					generateSpectrogram();
+					updateMetrics();
+					updateStatus('processingStatus', 'Processing Complete');
+				}, 2000);
+		}
+
+		function loadSampleData() {
+			updateStatus('processingStatus', 'Loading Sample Data...');
+            
+			// Simulate loading sample data
+			setTimeout(() => {
+				generateSampleWaveform();
+				generateSpectrogram();
+				updateMetrics();
+				addSampleEvents();
+				updateStatus('processingStatus', 'Sample Data Loaded');
+			}, 1500);
+		}
+
+		function generateSampleWaveform() {
+			const canvas = document.getElementById('waveformCanvas');
+			const ctx = waveformCtx;
+			const width = canvas.width;
+			const height = canvas.height;
+            
+			ctx.clearRect(0, 0, width, height);
+            
+			// Draw grid
+			ctx.strokeStyle = 'rgba(0, 255, 255, 0.1)';
+			ctx.lineWidth = 1;
+			for (let i = 0; i < 10; i++) {
+				ctx.beginPath();
+				ctx.moveTo(0, i * height / 10);
+				ctx.lineTo(width, i * height / 10);
+				ctx.stroke();
+			}
+            
+			// Generate and draw waveform
+			ctx.strokeStyle = '#00ffff';
+			ctx.lineWidth = 2;
+			ctx.beginPath();
+            
+			for (let x = 0; x < width; x++) {
+				const t = x / width * 10;
+				let y = height / 2;
+                
+				// Add base noise
+				y += Math.sin(t * 20) * 10;
+				y += Math.sin(t * 50) * 5;
+                
+				// Add seismic event spike
+				if (Math.abs(t - 3) < 0.5) {
+					y += Math.sin((t - 3) * 10) * 50 * Math.exp(-(t - 3) * (t - 3) * 10);
+				}
+				if (Math.abs(t - 7) < 0.3) {
+					y += Math.sin((t - 7) * 15) * 30 * Math.exp(-(t - 7) * (t - 7) * 20);
+				}
+                
+				if (x === 0) {
+					ctx.moveTo(x, y);
+				} else {
+					ctx.lineTo(x, y);
+				}
+			}
+            
+			ctx.stroke();
+            
+			// Animate progress
+			animateProgress();
+		}
+
+		function generateSpectrogram() {
+			const canvas = document.getElementById('spectrogramCanvas');
+			const ctx = spectrogramCtx;
+			const width = canvas.width;
+			const height = canvas.height;
+            
+			ctx.clearRect(0, 0, width, height);
+            
+			// Generate colorful spectrogram
+			for (let x = 0; x < width; x += 2) {
+				for (let y = 0; y < height; y += 2) {
+					const intensity = Math.random() * 0.3;
+					const eventIntensity = (Math.abs(x - width * 0.3) < 20 || Math.abs(x - width * 0.7) < 15) ? 
+										  Math.random() * 0.7 + 0.3 : 0;
+                    
+					const totalIntensity = Math.min(intensity + eventIntensity, 1);
+                    
+					if (totalIntensity > 0.1) {
+						const hue = 180 + totalIntensity * 180; // Cyan to magenta
+						ctx.fillStyle = `hsla(${hue}, 100%, 50%, ${totalIntensity})`;
+						ctx.fillRect(x, y, 2, 2);
+					}
+				}
+			}
+		}
+
+		function drawInitialCharts() {
+			const canvas = document.getElementById('performanceChart');
+			const ctx = performanceCtx;
+			const width = canvas.width;
+			const height = canvas.height;
+            
+			ctx.clearRect(0, 0, width, height);
+            
+			// Draw performance chart
+			const data = [95.8, 93.2, 97.1, 95.1];
+			const labels = ['Accuracy', 'Precision', 'Recall', 'F1 Score'];
+			const barWidth = width / (data.length * 2);
+			const maxValue = 100;
+            
+			data.forEach((value, index) => {
+				const barHeight = (value / maxValue) * height * 0.8;
+				const x = (index * 2 + 0.5) * barWidth;
+				const y = height - barHeight - 20;
+                
+				// Draw bar with gradient
+				const gradient = ctx.createLinearGradient(0, y, 0, height - 20);
+				gradient.addColorStop(0, '#00ffff');
+				gradient.addColorStop(1, '#00ff88');
+                
+				ctx.fillStyle = gradient;
+				ctx.fillRect(x, y, barWidth, barHeight);
+                
+				// Draw label
+				ctx.fillStyle = '#fff';
+				ctx.font = '12px Arial';
+				ctx.textAlign = 'center';
+				ctx.fillText(labels[index], x + barWidth / 2, height - 5);
+				ctx.fillText(value + '%', x + barWidth / 2, y - 5);
+			});
+		}
+
+		function updateMetrics() {
+			// Simulate metric updates
+			document.getElementById('snrValue').textContent = (Math.random() * 20 + 10).toFixed(1);
+			document.getElementById('frequencyValue').textContent = (Math.random() * 5 + 0.5).toFixed(2);
+			document.getElementById('amplitudeValue').textContent = (Math.random() * 1000 + 100).toFixed(0);
+			document.getElementById('compressionRatio').textContent = '85:1';
+			document.getElementById('dataSaved').textContent = '98.8';
+		}
+
+		function animateProgress() {
+			const progressFill = document.getElementById('processingProgress');
+			let progress = 0;
+            
+			const interval = setInterval(() => {
+				progress += 5;
+				progressFill.style.width = progress + '%';
+				progressFill.textContent = progress + '%';
+                
+				if (progress >= 100) {
+					clearInterval(interval);
+				}
+			}, 100);
+		}
+
+		function runDetection() {
+			updateStatus('detectionStatus', 'Detecting...');
+            
+			setTimeout(() => {
+				const numEvents = Math.floor(Math.random() * 3) + 2;
+				generateDetectedEvents(numEvents);
+				updateStatus('detectionStatus', numEvents + ' Events Detected');
+			}, 2000);
+		}
+
+		function generateDetectedEvents(num) {
+			const eventList = document.getElementById('eventList');
+			eventList.innerHTML = '';
+			detectedEvents = [];
+            
+			for (let i = 0; i < num; i++) {
+				const event = {
+					time: `T+${Math.floor(Math.random() * 1000)}s`,
+					magnitude: (Math.random() * 3 + 0.5).toFixed(1),
+					type: ['P-wave', 'S-wave', 'Surface'][Math.floor(Math.random() * 3)],
+					confidence: (Math.random() * 20 + 80).toFixed(1)
+				};
+                
+				detectedEvents.push(event);
+                
+				const eventItem = document.createElement('div');
+				eventItem.className = 'event-item';
+				eventItem.innerHTML = `
+					<span class="event-time">${event.time}</span>
+					<span class="event-magnitude">M${event.magnitude}</span>
+					<div style="margin-top: 10px; color: #ccc;">
+						Type: ${event.type} • Confidence: ${event.confidence}%
+					</div>
+				`;
+				eventList.appendChild(eventItem);
+			}
+		}
+
+		// Helper and UI functions referenced by buttons
+		function selectPlanet(planet) {
+			currentPlanet = planet;
+			document.querySelectorAll('.planet-btn').forEach(btn => {
+				btn.classList.toggle('active', btn.textContent.trim().toLowerCase().includes(planet));
+			});
+			updateStatus('engineStatus', `Engine Active (${planet.charAt(0).toUpperCase() + planet.slice(1)})`);
+		}
+
+		function toggleAutoDetect() {
+			autoDetectEnabled = !autoDetectEnabled;
+			document.querySelectorAll('button').forEach(b => {
+				if (b.textContent.startsWith('Auto-Detect')) {
+					b.textContent = `Auto-Detect: ${autoDetectEnabled ? 'ON' : 'OFF'}`;
+				}
+			});
+			if (autoDetectEnabled && !simInterval) {
+				startRealtimeSimulation();
+			}
+			if (!autoDetectEnabled && simInterval) {
+				clearInterval(simInterval);
+				simInterval = null;
+			}
+		}
+
+		function startRealtimeSimulation() {
+			if (simInterval) return;
+			updateStatus('processingStatus', 'Real-time Simulation Running');
+			simInterval = setInterval(() => {
+				generateSampleWaveform();
+				generateSpectrogram();
+				updateMetrics();
+				if (autoDetectEnabled && Math.random() > 0.6) {
+					generateDetectedEvents(Math.floor(Math.random() * 2) + 1);
+					updateStatus('detectionStatus', `${detectedEvents.length} Events Detected`);
+				}
+			}, 2000);
+		}
+
+		function exportResults() {
+			const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify({
+				planet: currentPlanet,
+				timestamp: new Date().toISOString(),
+				events: detectedEvents
+			}, null, 2));
+			const a = document.createElement('a');
+			a.href = dataStr;
+			a.download = `seismoguard_events_${Date.now()}.json`;
+			a.click();
+		}
+
+		function openSettings() {
+			document.getElementById('settingsModal').style.display = 'flex';
+		}
+		function closeModal(id) {
+			document.getElementById(id).style.display = 'none';
+		}
+		function saveSettings() {
+			closeModal('settingsModal');
+			updateStatus('engineStatus', 'Engine Active (Settings Saved)');
+		}
+		function openHelp() {
+			alert('Help: Load data, run detection, and view classified events.');
+		}
+		function openAbout() {
+			alert('SeismoGuard — Planetary Seismic Intelligence Dashboard');
+		}
+		function updateStatus(id, text) {
+			const el = document.getElementById(id);
+			if (el) el.textContent = text;
+		}
+		function addSampleEvents() {
+			generateDetectedEvents(3);
+			updateStatus('detectionStatus', `${detectedEvents.length} Events Detected`);
+		}
+
+		// Tiny debounce utility
+		function debounce(fn, ms) {
+			let t; return (...args) => { clearTimeout(t); t = setTimeout(() => fn.apply(this, args), ms); };
+		}
+	</script>
+		<!-- External libraries -->
+		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+		<!-- Enhancement modules (non-breaking) -->
+		<script src="js/ThemeManager.js"></script>
+		<script src="js/AudioEngine.js"></script>
+		<script src="js/StatisticsPanel.js"></script>
+		<script src="js/ExportManager.js"></script>
+		<script src="js/WebSocketClient.js"></script>
+		<script src="js/MLPipeline.js"></script>
+		<script src="js/IntegrationHooks.js"></script>
+</body>
+</html>

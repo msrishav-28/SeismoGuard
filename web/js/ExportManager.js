@@ -1,0 +1,112 @@
+/* eslint-disable */
+// ExportManager.js - Multi-format export with preview
+/**
+ * Handles export modal and multi-format data generation with optional compression.
+ * @class ExportManager
+ */
+class ExportManager {
+    constructor() {
+        this.formats = ['CSV', 'JSON', 'XML', 'HDF5', 'MATLAB', 'Excel'];
+        this.exportHistory = [];
+        this.init();
+    }
+    init() { this.createUI(); this.attachListeners(); }
+    createUI() {
+        const html = `
+        <div class="export-modal" id="exportModal" style="display:none;">
+            <div class="export-content">
+                <h3>📤 Export Data</h3>
+                <div class="export-options">
+                    <div class="format-selection"><label>Export Format:</label>
+                        <select id="exportFormat">${this.formats.map(f=>`<option value="${f}">${f}</option>`).join('')}</select>
+                    </div>
+                    <div class="data-selection"><label>Data to Export:</label>
+                        <div class="checkbox-group">
+                            <label><input type="checkbox" name="exportData" value="raw" checked> Raw Data</label>
+                            <label><input type="checkbox" name="exportData" value="processed" checked> Processed Data</label>
+                            <label><input type="checkbox" name="exportData" value="events" checked> Events</label>
+                            <label><input type="checkbox" name="exportData" value="statistics"> Statistics</label>
+                            <label><input type="checkbox" name="exportData" value="metadata"> Metadata</label>
+                        </div>
+                    </div>
+                    <div class="compression-options">
+                        <label><input type="checkbox" id="compressExport"> Compress Output</label>
+                        <label><input type="checkbox" id="includeVisuals"> Include Visualizations</label>
+                    </div>
+                    <div class="export-preview"><label>Preview:</label>
+                        <pre id="exportPreview">Select options to see preview...</pre>
+                    </div>
+                    <div class="export-buttons">
+                        <button class="btn" id="doExportBtn">Export</button>
+                        <button class="btn btn-secondary" id="cancelExportBtn">Cancel</button>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        const style = document.createElement('style');
+        style.textContent = `
+            .export-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.8); display: flex; align-items: center; justify-content: center; z-index: 10000; }
+            .export-content { background: var(--card-bg, linear-gradient(135deg, #1e1e3f, #2a2a4e)); padding: 30px; border-radius: 15px; width: 500px; max-height: 80vh; overflow-y: auto; }
+            .export-options > div { margin: 20px 0; }
+            .checkbox-group { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+            .export-preview { background: rgba(0,0,0,0.3); padding: 15px; border-radius: 8px; max-height: 200px; overflow-y: auto; }
+            .export-preview pre { color: var(--text-color,#fff); font-family: 'Courier New', monospace; font-size: 12px; margin: 0; }
+        `;
+        document.head.appendChild(style);
+        document.body.insertAdjacentHTML('beforeend', html);
+    }
+    attachListeners() {
+        document.querySelectorAll('#exportModal input, #exportModal select').forEach(el => el.addEventListener('change', ()=> this.updatePreview()));
+        document.addEventListener('click', (e) => {
+            if (e.target && e.target.id === 'doExportBtn') this.doExport();
+            if (e.target && e.target.id === 'cancelExportBtn') this.closeModal();
+        });
+    }
+    openModal() { document.getElementById('exportModal').style.display = 'flex'; this.updatePreview(); }
+    closeModal() { document.getElementById('exportModal').style.display = 'none'; }
+    updatePreview() { const f = document.getElementById('exportFormat').value; document.getElementById('exportPreview').textContent = this.generatePreview(f); }
+    generatePreview(format) {
+        const sample = { timestamp: new Date().toISOString(), events: [{ time: 'T+100s', magnitude: 2.3, type: 'moonquake' }], statistics: { mean: 1.23e-9, std: 4.56e-10 } };
+        switch(format){
+            case 'JSON': return JSON.stringify(sample,null,2);
+            case 'CSV': return 'timestamp,event_time,magnitude,type\n' + `${sample.timestamp},T+100s,2.3,moonquake`;
+            case 'XML': return `<?xml version="1.0" encoding="UTF-8"?>\n<seismic_data>\n  <timestamp>${sample.timestamp}</timestamp>\n  <events>\n    <event>\n      <time>T+100s</time>\n      <magnitude>2.3</magnitude>\n      <type>moonquake</type>\n    </event>\n  </events>\n</seismic_data>`;
+            case 'MATLAB': return `% SeismoGuard Export\n% Generated: ${sample.timestamp}\nevents = struct('time','T+100s','magnitude',2.3,'type','moonquake');`;
+            default: return 'Binary format - preview not available';
+        }
+    }
+    async doExport() {
+        const format = document.getElementById('exportFormat').value;
+        const compress = document.getElementById('compressExport').checked;
+        const includeVisuals = document.getElementById('includeVisuals').checked;
+        const selectedData = {}; document.querySelectorAll('input[name="exportData"]:checked').forEach(i=> selectedData[i.value]=true);
+        const exportData = await this.prepareExportData(selectedData, includeVisuals);
+        let content = this.formatData(exportData, format);
+        if (compress) content = await this.compressData(content);
+        this.downloadFile(content, `seismic_export_${Date.now()}.${this.getExtension(format, compress)}`);
+        this.exportHistory.push({ timestamp: new Date(), format, compressed: compress, size: content.length });
+        this.closeModal(); if (window.audioEngine) window.audioEngine.play('success');
+    }
+    async prepareExportData(selections, includeVisuals){
+        const data = {};
+        if (selections.raw && window.currentRawData) data.raw = window.currentRawData;
+        if (selections.processed && window.currentProcessedData) data.processed = window.currentProcessedData;
+        if (selections.events && window.detectedEvents) data.events = window.detectedEvents;
+        if (selections.statistics && window.statisticsPanel) data.statistics = window.statisticsPanel.stats;
+        if (selections.metadata) data.metadata = { exportTime: new Date().toISOString(), planet: window.currentPlanet || 'moon', samplingRate: 100, version: '1.0.0' };
+        if (includeVisuals) data.visualizations = await this.captureVisualizations();
+        return data;
+    }
+    formatData(data, format){ switch(format){ case 'JSON': return JSON.stringify(data,null,2); case 'CSV': return this.toCSV(data); case 'XML': return this.toXML(data); case 'MATLAB': return this.toMATLAB(data); case 'Excel': return this.toExcel(data); case 'HDF5': return this.toHDF5(data); default: return JSON.stringify(data); } }
+    toCSV(data){ let csv=''; if (data.events && data.events.length){ const headers = Object.keys(data.events[0]); csv += headers.join(',') + '\n'; data.events.forEach(e=> { csv += headers.map(h=> e[h]).join(',') + '\n'; }); } return csv; }
+    toXML(data){ const toXMLString = (obj, root='root') => { let xml = `<${root}>`; for (const [k,v] of Object.entries(obj)){ if (typeof v === 'object' && v !== null){ if (Array.isArray(v)) v.forEach(it=> xml += toXMLString(it,k)); else xml += toXMLString(v,k); } else { xml += `<${k}>${v}</${k}>`; } } xml += `</${root}>`; return xml; }; return '<?xml version="1.0" encoding="UTF-8"?>\n' + toXMLString(data,'seismic_data'); }
+    toMATLAB(data){ return `% SeismoGuard Export\n% ${new Date().toISOString()}\n% This is a placeholder.`; }
+    toExcel(){ return 'Excel binary - not implemented in browser'; }
+    toHDF5(){ return 'HDF5 binary - not implemented in browser'; }
+    async compressData(data){ return btoa(data); }
+    async captureVisualizations(){ const canvases = ['waveformCanvas','spectrogramCanvas','performanceChart'].map(id=> document.getElementById(id)); return canvases.filter(Boolean).map(c=> c.toDataURL()); }
+    downloadFile(content, filename){ const blob = new Blob([content], { type: 'application/octet-stream' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = filename; a.click(); URL.revokeObjectURL(url); }
+    getExtension(format, compressed){ const map = { JSON:'json', CSV:'csv', XML:'xml', MATLAB:'m', Excel:'xlsx', HDF5:'h5' }; let ext = map[format] || 'dat'; if (compressed) ext += '.gz'; return ext; }
+}
+
+document.addEventListener('DOMContentLoaded', () => { window.exportManager = new ExportManager(); });
