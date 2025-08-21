@@ -158,6 +158,39 @@ python batch_process.py --input-dir data/apollo/ --output results/
 
 WebSocket server flags:
 
+## 🤖 AI Assistant (Groq / Gemini 2.0 Flash)
+
+The in-app AI Assistant can answer help questions and workflow guidance. It sends chats over the existing WebSocket connection to the backend, which calls Groq or Gemini.
+
+Setup
+
+1. Install dependencies (adds httpx):
+```bash
+pip install -r requirements.txt
+```
+2. Configure API keys as environment variables:
+	- On Windows PowerShell:
+```powershell
+$Env:GROQ_API_KEY = "<your_groq_api_key>"
+$Env:GOOGLE_API_KEY = "<your_google_api_key>"
+# Optional overrides:
+$Env:GROQ_MODEL = "llama-3.1-70b-versatile"
+$Env:GEMINI_MODEL = "gemini-2.0-flash"
+```
+3. Start the backend WebSocket server as usual (run_ws.py prints ws://127.0.0.1:8765/ws).
+4. Open `web/index.html` in a browser. The AI Assistant panel appears at bottom-right.
+
+Using the Assistant
+- Provider: Auto tries Groq then Gemini. You can force a provider from the dropdown.
+- System prompt: Optional instruction prefix.
+- Context toggle: Includes a compact JSON of recent stats and the last events, improving answers.
+- FAQ prompts: Quick insert common questions (local, no network).
+
+Troubleshooting
+- If the assistant replies with missing key errors, set the environment variables and reload the backend.
+- If the WebSocket is disconnected, ensure the backend is running at ws://127.0.0.1:8765/ws (or adjust `WebSocketClient.js`).
+
+
 - Auto-training is enabled by default if a model is missing.
 - `--no-fallback-train` disables auto-training.
 - `--train-only` trains/saves a compact model and exits (no server).
@@ -315,16 +348,44 @@ Raw Data → Feature Extraction → Standardization → Classification
 ## 🚧 Future Enhancements
 
 ### Phase 2 Development
-- [ ] Integration with NASA's PDS
-- [ ] Support for Europa/Enceladus missions
-- [ ] Distributed sensor network support
-- [ ] Quantum-resistant encryption
 
 ### Phase 3 Vision
-- [ ] AI-powered event prediction
-- [ ] Autonomous instrument adjustment
-- [ ] Cross-mission data correlation
-- [ ] Public API for researchers
+
+## Wrap-up (amateur-friendly)
+
+What we added so far (high level):
+- Live WebSocket pipeline with stats: events per minute, bytes sent, and compression savings.
+- Safer detection: energy + adaptive thresholding with lightweight spectral hints; heavy ML is optional.
+- Frontend helpers: fullscreen mode, timestamp formats, print-to-PDF, export to JSON/CSV/XML/Excel, and gzip download.
+- Analysis tools: event comparison overlays, basic annotations, batch CSV processor, filter-bank visualization, timeline and monthly heatmap.
+- AI assistant: chat with Groq or Gemini via backend, plus local FAQ prompts and optional context injection.
+
+What’s new in this update:
+- Event Clustering (Feature 11): k-means on simple features (magnitude/time/confidence/type). OFF by default; toggle from the “Clustering” panel. Colors propagate to the Timeline and show badges per event.
+- Predictive Baseline (Feature 15): moving average or AR(1)-style overlay on the waveform. OFF by default; toggle from the “Predictive Baseline” panel.
+
+What’s left / known limitations:
+- Clustering uses a tiny in-browser k-means (no GPU). It’s guidance, not science—results can shift with few events. Works best with ≥ k events.
+- Predictive baseline is a simple heuristic for trend lines; it is not a physical forecast. Keep it as a visual aid.
+- Advanced exports like HDF5 and heavy ML (custom CNN) are deferred. Current export formats and models are stable.
+
+Will it work reliably?
+- Yes for regular usage: all new features are additive and opt-in. If a module isn’t available, the app falls back gracefully.
+- The backend and UI keep running even without API keys; the AI panel will just stay inactive.
+- If data volumes get big, consider enabling downsampling or moving heavy logic to a Web Worker in future.
+
+Toggles and where to find them:
+- Clustering: floating panel at bottom-right (“Clustering”). Choose k=2–5 and click Re-cluster.
+- Predictive Baseline: floating panel at bottom-right (“Predictive Baseline”). Switch between Moving Avg and AR(1).
+
+## Dataset & API Integration
+
+- See docs/DATASETS_AND_APIS.md for a consolidated guide with links and scaffolds.
+- A safe backend proxy is available for quick demos: send `data_fetch` over WebSocket with `provider` of `usgs_realtime`, `iris_event`, or `emsc_event`. A small UI panel “Data Integration” (bottom-left) triggers these calls and shows results.
+
+### Environment variables
+- Copy `.env.example` to `.env` and fill in keys (GROQ_API_KEY, GOOGLE_API_KEY, etc.).
+- The server loads `.env` automatically (see run script). Do not commit `.env`.
 
 ## 🤝 Contributing
 

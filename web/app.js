@@ -17,6 +17,14 @@
 		drawWaveform();
 		if (window.statisticsPanel) window.statisticsPanel.updateStatistics(state.waveform);
 		updateMetricsFromData(state.waveform);
+			// Notify optional filter bank module
+			if (window.filterBank && typeof window.filterBank.onWaveform === 'function') {
+				window.filterBank.onWaveform(state.waveform);
+			}
+			// Notify predictive baseline overlay
+			if (window.predictiveBaseline && typeof window.predictiveBaseline.onWaveform === 'function'){
+				window.predictiveBaseline.onWaveform(state.waveform);
+			}
 	};
 
 	window.addEventToList = function(event){
@@ -24,19 +32,29 @@
 		if (!list) return;
 		const item = document.createElement('div');
 		item.className = 'event-item';
-		item.innerHTML = `<span class="event-time">${new Date(event.timestamp || Date.now()).toLocaleTimeString()}</span>
+		const ts = Number(event.timestamp || Date.now());
+			const id = `ev_${ts}_${Math.floor(Math.random()*1e6)}`;
+			item.setAttribute('data-event-id', id);
+			item.innerHTML = `<input type="checkbox" class="event-select" title="Select for comparison" style="margin-right:8px;">
+				<span class="event-time" data-timestamp="${ts}">${new Date(ts).toLocaleTimeString()}</span>
 			<span class="event-magnitude">M${(event.magnitude ?? 0).toFixed ? event.magnitude.toFixed(1) : event.magnitude}</span>
 			<div style="margin-top:10px; color:#ccc;">Type: ${event.type || event.event_type || 'unknown'} • Confidence: ${(event.confidence ?? 0).toFixed ? event.confidence.toFixed(1) : event.confidence}%</div>`;
 		list.prepend(item);
 		if (!window.detectedEvents) window.detectedEvents = [];
 		window.detectedEvents.unshift({
+			id,
+			timestamp: ts,
 			time: item.querySelector('.event-time').textContent,
-			magnitude: event.magnitude ?? 0,
+			magnitude: Number(event.magnitude ?? 0),
 			type: event.type || event.event_type || 'unknown',
-			confidence: event.confidence ?? 0
+			confidence: Number(event.confidence ?? 0)
 		});
 		const det = document.getElementById('detectionStatus');
 		if (det) det.textContent = `${window.detectedEvents.length} Events Detected`;
+		// Notify clustering to recompute labels when enabled
+		if (window.eventClustering && typeof window.eventClustering.onEventsUpdated==='function'){
+			window.eventClustering.onEventsUpdated(window.detectedEvents);
+		}
 	};
 
 	// Canvas helpers

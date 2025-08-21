@@ -33,7 +33,8 @@ class WebSocketClient {
         case 'alert': this.handleAlert(data.payload); break;
         case 'statistics': this.handleStatistics(data.payload); break;
         case 'heartbeat': this.handleHeartbeat(); break;
-        default: this.emit(data.type, data.payload); } } catch(err){ console.error('Error processing message:', err); } }
+    case 'data_fetch_result': this.emit('data_fetch_result', data); break;
+    default: this.emit(data.type, data.payload); } } catch(err){ console.error('Error processing message:', err); } }
     onError(error){ console.error('WebSocket error:', error); this.updateStatusIndicator('error'); this.emit('error', error); }
     onClose(){ console.log('WebSocket disconnected'); this.isConnected = false; this.stopHeartbeat(); this.updateStatusIndicator('disconnected'); this.emit('connection', { status: 'disconnected' }); this.scheduleReconnect(); }
     scheduleReconnect(){ if (this.reconnectAttempts < this.maxReconnectAttempts){ this.reconnectAttempts++; setTimeout(()=> this.connect(), this.reconnectInterval); } else { console.error('Max reconnection attempts reached'); this.updateStatusIndicator('failed'); } }

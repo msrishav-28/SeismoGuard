@@ -6,7 +6,9 @@ matplotlib==3.7.2
 joblib==1.3.1
 
 # Optional (heavy) deep learning dependency (enabled for TF features)
-tensorflow==2.13.0
+# TensorFlow (optional). For Python 3.11 on Windows, prefer CPU-only wheels.
+# If you don't need deep learning, you can comment this out.
+tensorflow-cpu==2.15.0
 
 # --- Recommended pinned versions (from README) ---
 # Core
@@ -24,4 +26,6 @@ tensorflow==2.13.0
 # flask==2.3.2           # Web API
 # flask-cors==4.0.0      # CORS support
 websockets>=10,<13     # WebSocket server for realtime streaming
+httpx>=0.27.0          # HTTP client for Groq/Gemini chatbot
+python-dotenv>=1.0.0   # Load environment from .env
 

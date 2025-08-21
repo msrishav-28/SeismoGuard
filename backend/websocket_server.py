@@ -5,6 +5,8 @@ from datetime import datetime
 
 import numpy as np
 import websockets
+from chatbot import route_chat
+from integration_proxy import fetch as proxy_fetch
 
 
 class SeismicWebSocketServer:
@@ -78,6 +80,35 @@ class SeismicWebSocketServer:
                 await websocket.send(json.dumps(result))
             except Exception as exc:
                 logging.exception("Failed to send processing_result: %s", exc)
+        elif msg_type == 'chat':
+            prompt = data.get('message') or ''
+            provider = data.get('provider', 'auto')
+            system = data.get('system')
+            # Do not block the event loop; call async route_chat
+            try:
+                res = await route_chat(provider, prompt, system)
+                payload = {'type': 'chat_response', 'provider': res.provider, 'text': res.text, 'error': res.error, 'meta': res.meta}
+                await websocket.send(json.dumps(payload))
+            except Exception as exc:
+                await websocket.send(json.dumps({'type': 'chat_response', 'provider': provider, 'text': '', 'error': str(exc)}))
+        elif msg_type == 'data_fetch':
+            # Safe proxy for whitelisted providers
+            provider = data.get('provider')
+            endpoint = data.get('endpoint')
+            params = data.get('params') if isinstance(data.get('params'), dict) else None
+            try:
+                res = await proxy_fetch(provider, endpoint, params)
+                await websocket.send(json.dumps({
+                    'type': 'data_fetch_result',
+                    'provider': res.provider,
+                    'endpoint': res.endpoint,
+                    'ok': res.ok,
+                    'status': res.status_code,
+                    'data': res.data if res.ok else None,
+                    'error': res.error if not res.ok else None,
+                }))
+            except Exception as exc:
+                await websocket.send(json.dumps({'type': 'data_fetch_result', 'provider': provider, 'endpoint': endpoint, 'ok': False, 'error': str(exc)}))
 
     async def stream_data(self, websocket):
         while True:

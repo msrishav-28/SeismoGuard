@@ -18,6 +18,13 @@ except Exception:
     load_or_train_models = None  # optional
 from websocket_server import SeismicWebSocketServer  # noqa: E402
 
+# Load .env if present
+try:
+    from dotenv import load_dotenv  # type: ignore
+    load_dotenv()
+except Exception:
+    pass
+
 
 def main():
     parser = argparse.ArgumentParser(description="SeismoGuard WebSocket Server")

@@ -420,7 +420,9 @@
 			detectedEvents = [];
             
 			for (let i = 0; i < num; i++) {
+				const ts = Date.now() + Math.floor(Math.random()*1e4);
 				const event = {
+					timestamp: ts,
 					time: `T+${Math.floor(Math.random() * 1000)}s`,
 					magnitude: (Math.random() * 3 + 0.5).toFixed(1),
 					type: ['P-wave', 'S-wave', 'Surface'][Math.floor(Math.random() * 3)],
@@ -432,13 +434,21 @@
 				const eventItem = document.createElement('div');
 				eventItem.className = 'event-item';
 				eventItem.innerHTML = `
-					<span class="event-time">${event.time}</span>
+					<span class="event-time" data-timestamp="${ts}">${new Date(ts).toLocaleTimeString()}</span>
 					<span class="event-magnitude">M${event.magnitude}</span>
 					<div style="margin-top: 10px; color: #ccc;">
 						Type: ${event.type} • Confidence: ${event.confidence}%
 					</div>
 				`;
 				eventList.appendChild(eventItem);
+			}
+			// Notify clustering if present
+			if (window.eventClustering && typeof window.eventClustering.onEventsUpdated==='function'){
+				window.eventClustering.onEventsUpdated(detectedEvents);
+			}
+			// Request timeline re-render
+			if (window.timeline && typeof window.timeline.render==='function'){
+				window.timeline.render();
 			}
 		}
 
@@ -538,5 +548,19 @@
 		<script src="js/WebSocketClient.js"></script>
 		<script src="js/MLPipeline.js"></script>
 		<script src="js/IntegrationHooks.js"></script>
+		<script src="js/FullscreenManager.js"></script>
+		<script src="js/TimestampManager.js"></script>
+		<script src="js/PrintManager.js"></script>
+		<script src="js/EventComparison.js"></script>
+		<script src="js/AnnotationManager.js"></script>
+		<script src="js/BatchProcessor.js"></script>
+		<script src="js/FilterBank.js"></script>
+		<script src="js/Timeline.js"></script>
+		<script src="js/HeatmapCalendar.js"></script>
+		<script src="js/ChatbotFAQ.js"></script>
+		<script src="js/Chatbot.js"></script>
+		<script src="js/Clustering.js"></script>
+		<script src="js/PredictiveBaseline.js"></script>
+		<script src="js/DataIntegration.js"></script>
 </body>
 </html>
