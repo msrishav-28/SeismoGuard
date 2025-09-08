@@ -419,17 +419,10 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 ## 📞 Contact
 
 **Team SeismoGuard**
-- Project Lead: [Your Name]
-- Email: seismoguard@spaceapps.com
-- Website: [seismoguard.space](https://seismoguard.space)
+- Project Lead: M S Rishav Subhin
+- Email: msrishav28.com
+- Website: [seismoguard.space]()
 - GitHub: [github.com/seismoguard](https://github.com/seismoguard)
-
-## 🏆 Awards & Recognition
-
-- 🥇 **NASA Space Apps Hackathon 2024** - Global Winner (Pending)
-- 🌟 **Best Use of Science** - Regional Winner
-- 💡 **Most Innovative Solution** - Local Winner
-- 🚀 **People's Choice Award** - Online Voting
 
 ---
 
