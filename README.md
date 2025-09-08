@@ -421,7 +421,7 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) file for
 **Team SeismoGuard**
 - Project Lead: M S Rishav Subhin
 - Email: msrishav28.com
-- Website: [seismoguard.space]()
+- Website: []()
 - GitHub: [github.com/seismoguard](https://github.com/seismoguard)
 
 ---
