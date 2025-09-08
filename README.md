@@ -1,6 +1,6 @@
 # 🚀 SeismoGuard: Intelligent Planetary Seismic Detection System
 
-![SeismoGuard Banner](https://img.shields.io/badge/NASA%20Space%20Apps-2024-blue)
+![SeismoGuard Banner](https://img.shields.io/badge/NASA%20Space%20Apps-2025-blue)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-green)
 ![License](https://img.shields.io/badge/License-MIT-yellow)
 ![Status](https://img.shields.io/badge/Status-Competition%20Ready-success)
